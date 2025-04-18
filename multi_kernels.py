@@ -168,9 +168,9 @@ def sum_rate_from_binary_code(channels, ris_channel, bs_ris_channel, binary_code
               bs_to_ris_channels[i] = bs_ris_channel[ris_idx]  # Canal BS-to-RIS pour l'utilisateur i
           '''
           # Optimiser l'allocation de puissance pour NOMA
-          #optimal_power_allocation = optimize_power_allocation(bs_to_user_channels,ris_channels,bs_to_ris_channels,P_total,n_ris_max)
+          optimal_power_allocation = optimize_power_allocation(bs_to_user_channels,ris_channels,bs_to_ris_channels,P_total,n_ris_max)
           #optimal_power_allocation = waterfilling_noma(bs_to_user_channels, ris_channels, bs_to_user_channels, P_total, n_ris_max)
-          optimal_power_allocation = waterfilling_noma(bs_to_user_channels, ris_channels, bs_to_ris_channels, P_total, n_ris_max)
+          #optimal_power_allocation = waterfilling_noma(bs_to_user_channels, ris_channels, bs_to_ris_channels, P_total, n_ris_max)
 
           # Calculer le taux total pour cette combinaison
           max_rates = calculate_noma_capacity(bs_to_user_channels,ris_channels,bs_to_ris_channels, optimal_power_allocation,n_ris_max)
@@ -291,7 +291,9 @@ def extraire_canaux(vecteur_canaux, code_binaire, ris_binaire, n_ris):
 # Charger le modèle pré-entraîné pour 3 utilisateurs
 def load_pretrained_model(weights_path, input_dim):
     model = models.Sequential([
+        #layers.Dense(128, input_dim=input_dim, activation='relu'),
         layers.Dense(64, input_dim=input_dim, activation='relu'),
+        #layers.Dense(64, activation='relu'),
         layers.Dense(32, activation='relu'),
         layers.Dense(1)  # Sortie avec 3 neurones (un pour chaque utilisateur)
     ])
@@ -484,10 +486,10 @@ def generate_lots(n, k=6, l=3):
     return lots
 
 
-n = 12  # Nombre d'utilisateurs (15 utilisateurs dans ce cas)
-n_ris=4
-nmax=4
-n_ris_max = 4
+n = 7  # Nombre d'utilisateurs (15 utilisateurs dans ce cas)
+n_ris=3
+nmax= 5
+n_ris_max = 3
 
 test_size = 1000
 input_dim = 2*(n_ris_max+nmax*(1+n_ris_max))  # Chaque vecteur d'entrée a 6 éléments (2 éléments CSI pour chaque utilisateur dans une combinaison de 3)
@@ -497,7 +499,7 @@ power_allocation = [0.4, 0.4, 0.4]  # Allocation de puissance
 model_3d = create_n_user_model(n,n_ris, input_dim, weights_path,nmax,n_ris_max)
 
 # Charger les données de test depuis le fichier CSV
-testset_file = 'train44set12-1k.csv'  # Remplacer par le chemin de votre fichier CSV
+testset_file = 'train53set7-3-1000.csv'  # Remplacer par le chemin de votre fichier CSV
 
 # Charger les données
 X,X_bs,X_ris, y = load_data(testset_file,n,n_ris)
