@@ -4,31 +4,6 @@ import csv
 from itertools import combinations
 from scipy.optimize import minimize
 
-def waterfilling_noma(channel_gains, selected_ris_channel, bs_to_ris_channel, total_power, RIS_users):
-    """
-    Allocation de puissance type "inverse water-filling" adaptée à NOMA downlink.
-    On favorise les utilisateurs faibles pour respecter la logique NOMA.
-
-    :param channel_gains: Liste des gains de canal (valeurs complexes) pour les utilisateurs.
-    :param selected_ris_channel: Liste des canaux RIS pour les utilisateurs sélectionnés.
-    :param bs_to_ris_channel: Canal de la BS vers chaque RIS.
-    :param total_power: Puissance totale disponible.
-    :param RIS_users: Nombre d'utilisateurs passant par le RIS.
-    :return: Vecteur des puissances allouées.
-    """
-    # Puissances effectives des canaux |h|^2 (canal direct + composante RIS)
-    channel_gains_power = np.abs(channel_gains) ** 2
-    ris_gains_power = np.abs(selected_ris_channel) ** 2 * np.abs(bs_to_ris_channel[:RIS_users]) ** 2
-
-    for ris in range(RIS_users):
-        channel_gains_power[ris] += ris_gains_power[ris]
-
-    # Inverse Water-Filling : plus le canal est faible, plus on lui alloue de puissance
-    weights = 1 / (channel_gains_power + 1e-12)  # éviter division par 0
-    weights /= np.sum(weights)  # normalisation
-
-    power_allocation = weights * total_power
-    return power_allocation
 
 # Fonction de calcul de la capacité NOMA
 def calculate_noma_capacity(channel_gains, selected_ris_channel, bs_to_ris_channel, power_allocation,RIS_users, noise_power=1e-9):
@@ -134,8 +109,7 @@ def noma_allocation(channels,bs_to_ris_channel,ris_to_users_channels, N,RIS_user
             selected_channels = [channels[i] for i in comb]
             selected_ris_channel =  [ris_to_users_channels[idx,i] for idx,i in enumerate(Rcomb)]
             # Optimiser l'allocation de puissance
-            #optimal_power_allocation = optimize_power_allocation(selected_channels, selected_ris_channel, bs_to_ris_channel, P_total,RIS_users)
-            optimal_power_allocation = waterfilling_noma(selected_channels, selected_ris_channel, bs_to_ris_channel, P_total, RIS_users)
+            optimal_power_allocation = optimize_power_allocation(selected_channels, selected_ris_channel, bs_to_ris_channel, P_total,RIS_users)
 
             # Calculer les capacités des utilisateurs avec cette allocation de puissance optimale
             rates = calculate_noma_capacity(selected_channels, selected_ris_channel, bs_to_ris_channel, optimal_power_allocation,RIS_users)
@@ -153,7 +127,6 @@ def noma_allocation(channels,bs_to_ris_channel,ris_to_users_channels, N,RIS_user
                 max_rates[comb[0]] = rates[0]
                 max_rates[comb[1]] = rates[1]
                 max_rates[comb[2]] = rates[2]
-                max_rates[comb[3]] = rates[3]
 
     # Créer la combinaison binaire associée de 4 bits
     binary_combination = [0] * num_users  # Initialisation avec tous les zéros
@@ -169,27 +142,29 @@ def noma_allocation(channels,bs_to_ris_channel,ris_to_users_channels, N,RIS_user
 # Exemple d'utilisation
 if __name__ == "__main__":
     # Initialisation des paramètres
-    num_realizations = 1000
+    num_realizations = 100000
     noise_power = 1e-9
 
-    N = 12
-    N_user = 4
-    RIS_users = 4
+    N = 5
+    N_users = 5
+    RIS_users = 3
 
 
     # Placer les utilisateurs dans un carré de taille 100x100
     D = 100  # Dimensions de l'espace (zone de placement des utilisateurs)
     bs_position = np.array([D / 2, D / 2])  # Station de base au centre
-    ris_positions = np.random.uniform(0, D, (RIS_users, 2))
+    
     # Fichier de sortie CSV
-    output_file = "train44set12-1k.csv"
+    output_file = "train53set-100k.csv"
 
-    bs_to_ris_distance = [np.linalg.norm(bs_position - ris_positions[ris]) for ris in range(RIS_users)]
+    
     # Préparer les données pour l'enregistrement
     data = []
 
     for _ in range(num_realizations):
-        if _ % 100 == 0:
+        ris_positions = np.random.uniform(0, D, (RIS_users, 2))
+        bs_to_ris_distance = [np.linalg.norm(bs_position - ris_positions[ris]) for ris in range(RIS_users)]
+        if _ % 10000 == 0:
             print(f"Realisation {_}")
 
         # Placer les utilisateurs aléatoirement dans la cellule (zone de taille D)
@@ -222,7 +197,7 @@ if __name__ == "__main__":
         #channels = np.random.randn(N) + 1j * np.random.randn(N)
 
         # Calculer les débits maximaux, sum-rate et la combinaison binaire
-        max_rates, max_sum_rate, binary_combination = noma_allocation(channels,bs_to_ris_channel,ris_to_users_channels, N,RIS_users,N_user)
+        max_rates, max_sum_rate, binary_combination = noma_allocation(channels,bs_to_ris_channel,ris_to_users_channels, N,RIS_users,N_users)
 
         # Ajouter une ligne au tableau de données avec les résultats
         data.append([
