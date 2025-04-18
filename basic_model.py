@@ -67,7 +67,9 @@ def create_nn_model(input_dim):
     - model: Un modèle Keras pour entraîner et prédire la somme des sum-rates.
     """
     model = models.Sequential([
+        #layers.Dense(128, input_dim=input_dim, activation='relu'),
         layers.Dense(64, input_dim=input_dim, activation='relu'),
+        #layers.Dense(64, activation='relu'),
         layers.Dense(32, activation='relu'),
         layers.Dense(1)  # Sortie avec un seul neurone représentant la somme des sum-rates
     ])
@@ -79,10 +81,10 @@ def create_nn_model(input_dim):
 # Fonction principale
 #def main():
 
-n= 4
-n_ris = 4
+n= 5
+n_ris = 3
 # Charger les données depuis le fichier CSV
-filename = "train44set4-200k.csv"  # Changez le nom de votre fichier CSV ici
+filename = "train53set5-100k.csv"  # Changez le nom de votre fichier CSV ici
 
 X, y = load_data_from_csv(filename,n,n_ris)
 
@@ -109,7 +111,7 @@ X_test_scaled = scaler.transform(X_test)
 model = create_nn_model(X_train.shape[1])
 
 # Entraîner le modèle
-model.fit(X_train_scaled, y_train_scaled, epochs=50, batch_size=32, validation_data=(X_test_scaled, y_test_scaled))
+model.fit(X_train_scaled, y_train_scaled, epochs=80, batch_size=32, validation_data=(X_test_scaled, y_test_scaled))
 
 # Évaluer le modèle sur l'ensemble de test
 test_loss = model.evaluate(X_test_scaled, y_test_scaled)
@@ -129,7 +131,3 @@ model.save_weights("model.weights.h5")
 
 # Sauvegarder le modèle complet
 model.save("mon_modele_complet.h5")
-
-# Exécution du programme principal
-#if __name__ == "__main__":
-#    main()
