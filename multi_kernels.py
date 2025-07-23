@@ -8,7 +8,7 @@ import tensorflow
 from scipy.optimize import minimize
 from sklearn.preprocessing import StandardScaler
 import numpy as np
-
+import joblib
 import numpy as np
 from itertools import combinations
 
@@ -134,9 +134,10 @@ def sum_rate_from_binary_code(channels, ris_channel, bs_ris_channel, binary_code
     """
     binary_code_user = binary_code[:n_users]
     binary_code_ris = binary_code[n_users:]
+    #print(f"Binary_code_user: {binary_code_user}")
     #bs_users,ris_to_users_channels,bs_to_ris_channel = load_complex_vectors(channels, selected_ris_channel, bs_to_ris_channel,n, n_ris)
-    active_users_indices = [i for i, bit in enumerate(binary_code_user.decode('utf-8')) if bit == '1']
-    active_ris_indices = [i for i, bit in enumerate(binary_code_ris.decode('utf-8')) if bit == '1']
+    active_users_indices = [i for i, bit in enumerate(binary_code_user) if bit == '1']
+    active_ris_indices = [i for i, bit in enumerate(binary_code_ris) if bit == '1']
     # Vérifier que le nombre d'utilisateurs actifs est entre 3 et 10
     if len(active_users_indices) < nmax or len(active_users_indices) > n_users:
         raise ValueError("Le code binaire doit activer entre 3 et 10 utilisateurs.")
@@ -262,8 +263,7 @@ def codes_binaires_avec_n_1(k, n):
         codes.append(''.join(code))  # Joindre la liste en une chaîne de caractères
 
     return codes
-
-def extraire_canaux(vecteur_canaux, code_binaire, ris_binaire, n_ris):
+def extraire_canaux2(vecteur_canaux, code_binaire, ris_binaire, n_ris):
     # Vérification que le code binaire et le vecteur de canaux ont la même longueur
     if len(vecteur_canaux) != n_ris + (n_ris+1)*len(code_binaire):
         raise ValueError("La longueur du code binaire doit être égale à la longueur du vecteur de canaux")
@@ -281,72 +281,97 @@ def extraire_canaux(vecteur_canaux, code_binaire, ris_binaire, n_ris):
               canaux_extraits.append(vecteur_canaux[n_ris+(n_ris+1)*i])
               for j, rbit in enumerate(ris_binaire):
                   if rbit == '1':  # Si le bit est 1, on extrait le canal correspondant
-                      canaux_extraits.append(vecteur_canaux[n_ris+(n_ris+1)*i+j])
+                      canaux_extraits.append(vecteur_canaux[n_ris+(n_ris+1)*i+1+j])
+
+
+    #print(f"Dimensions de canaux_extraits: {len(canaux_extraits)}")
+    return canaux_extraits
+def extraire_canaux(vecteur_canaux, code_binaire, ris_binaire, n_ris):
+    # Vérification que le code binaire et le vecteur de canaux ont la même longueur
+    if len(vecteur_canaux) != n_ris + (n_ris+1)*len(code_binaire):
+        raise ValueError("La longueur du code binaire doit être égale à la longueur du vecteur de canaux")
+
+    #print(f"code_binaire: {len(code_binaire)}")
+    # Liste pour stocker les canaux extraits
+    canaux_extraits = []
+    for j, rbit in enumerate(ris_binaire):
+      if rbit == '1':  # Si le bit est 1, on extrait le canal correspondant
+          canaux_extraits.append(vecteur_canaux[j])
+    #print(f"Dimensions de canaux_extraits: {len(canaux_extraits)}
+    # Parcourir chaque canal et le code binaire associé
+    for i, bit in enumerate(code_binaire):
+      if bit == '1':  # Si le bit est 1, on extrait le canal correspondant
+              canaux_extraits.append(vecteur_canaux[n_ris+(n_ris+1)*i])
+
+    for i, bit in enumerate(code_binaire):
+      if bit == '1':  # Si le bit est 1, on extrait le canal correspondant
+              for j, rbit in enumerate(ris_binaire):
+                  if rbit == '1':  # Si le bit est 1, on extrait le canal correspondant
+                      canaux_extraits.append(vecteur_canaux[n_ris+(n_ris+1)*i+1+j])
 
 
     #print(f"Dimensions de canaux_extraits: {len(canaux_extraits)}")
     return canaux_extraits
 
 
+
+from tensorflow.keras.models import load_model
+
+def load_pretrained_model2(model_path):
+    model = load_model(model_path)  # Charge l'architecture, les poids, et la compilation
+    return model
+
+
 # Charger le modèle pré-entraîné pour 3 utilisateurs
 def load_pretrained_model(weights_path, input_dim):
     model = models.Sequential([
-        #layers.Dense(128, input_dim=input_dim, activation='relu'),
-        layers.Dense(64, input_dim=input_dim, activation='relu'),
-        #layers.Dense(64, activation='relu'),
-        layers.Dense(32, activation='relu'),
+        layers.Dense(64, input_dim=input_dim),layers.LeakyReLU(alpha=0.01),
+        layers.Dense(128),layers.LeakyReLU(alpha=0.01),
+        layers.Dense(64),layers.LeakyReLU(alpha=0.01),
+         layers.Dense(32),layers.LeakyReLU(alpha=0.01),
+        layers.Dense(16),layers.LeakyReLU(alpha=0.01),
         layers.Dense(1)  # Sortie avec 3 neurones (un pour chaque utilisateur)
     ])
     model.compile(optimizer='adam', loss='mean_squared_error')
     model.load_weights(weights_path)  # Charger les poids du modèle
     return model
 
-# Créer un modèle 3D pour n utilisateurs
-def create_n_user_model(n, n_ris, input_dim, pretrained_weights_path,nmax,n_ris_max):
-    inputs = [layers.Input(shape=(2,)) for _ in range((n_ris+1)*n+n_ris)]  # Entrées pour chaque utilisateur
-    # Charger le modèle pré-entraîné (qui prend 3 utilisateurs et génère 3 sorties)
-    base_model = load_pretrained_model(pretrained_weights_path, input_dim)
-    nris_model = 2
-    # Créer toutes les combinaisons de 3 utilisateurs parmi les n utilisateurs
-    #user_combinations = generate_lots(n,6,3)
-    #ris_combinations = generate_lots(n_ris,2,2)
+def create_n_user_model(n, n_ris, input_dim, pretrained_weights_path, nmax, n_ris_max):
+    # Entrées pour chaque canal
+    num_inputs = (n_ris + 1) * n + n_ris
+    inputs = [layers.Input(shape=(2,)) for _ in range(num_inputs)]
 
-    user_combinations = generate_lots(n,nmax,nmax)
-    ris_combinations = generate_lots(n_ris,n_ris_max,n_ris_max)
-    # Liste pour stocker les sorties
+    # Charger le modèle pré-entraîné
+    #base_model = load_pretrained_model(pretrained_weights_path, input_dim)
+    base_model = load_pretrained_model2(pretrained_weights_path)
+    # Générer les combinaisons possibles d'utilisateurs et de RIS
+    user_combinations = generate_lots(n, nmax, nmax)
+    ris_combinations = generate_lots(n_ris, n_ris_max, n_ris_max)
+    print(ris_combinations)
     final_outputs = []
-    combinations = []
-    for comb in user_combinations:
-      for ris in ris_combinations:
-          # Obtenez les entrées pour les utilisateurs dans cette combinaison
-          user_inputs = extraire_canaux(inputs, comb,ris, n_ris)
-          # Concaténer les entrées des 3 utilisateurs pour cette combinaison (forme (None, 6))
-          concatenated_input = layers.Concatenate()(user_inputs)
-          # Appliquer le modèle pré-entraîné sur l'entrée concaténée
-          outputs = base_model(concatenated_input)  # Sorties pour cette combinaison de 3 utilisateurs
-          # Ajouter la sortie sommée à final_outputs
-          final_outputs.append(outputs)
-          combinations.append(comb+ris)  # Stocker la combinaison correspondante
 
-    # Empiler les sorties pour passer à la réduction (max)
-    stacked_outputs = layers.Concatenate()(final_outputs)  # Forme (None, num_combinations)
+    for user_comb in user_combinations:
+        for ris_comb in ris_combinations:
+            # Extraire les bons canaux pour les combinaisons
+            user_inputs = extraire_canaux(inputs, user_comb, ris_comb, n_ris)
+            concatenated_input = layers.Concatenate()(user_inputs)
+            output = base_model(concatenated_input)
+            final_outputs.append(output)
 
-    # Calculer le max sur l'axe des combinaisons (axis=-1)
-    max_outputs = layers.Lambda(lambda x: tf.reduce_max(x, axis=-1),output_shape=(1,))(stacked_outputs)
+    # Empilement des sorties (output shape: (None, num_combinations))
+    stacked_outputs = layers.Concatenate(axis=1)(final_outputs)
 
+    # Obtenir la valeur maximale
+    max_outputs = layers.Lambda(lambda x: tf.reduce_max(x, axis=1, keepdims=True))(stacked_outputs)
 
-    # Appliquer argmax pour obtenir l'indice du maximum
-    max_indices = layers.Lambda(lambda x: tf.argmax(x, axis=-1),output_shape=(1,))(stacked_outputs)
+    # Obtenir l’indice de cette valeur max
+    max_indices = layers.Lambda(lambda x: tf.argmax(x, axis=1, output_type=tf.int32))(stacked_outputs)
 
-
-    # Obtenir l'indice de la combinaison maximale
-    # Définir la forme de sortie du gather pour qu'elle soit compatible avec la structure
-    max_combination_index = layers.Lambda(lambda x: tf.gather(combinations, x),output_shape=(3,))(max_indices)
-
-    # Créer le modèle final avec les entrées et les sorties
-    final_model = models.Model(inputs=inputs, outputs=[max_outputs, max_combination_index])
+    # Créer le modèle final
+    final_model = models.Model(inputs=inputs, outputs=[max_outputs, max_indices])
 
     return final_model
+
 
 
 
@@ -368,21 +393,31 @@ def prepare_user_inputs(X,n,n_ris):
 
 
 # Faire des prédictions sur le testset
-def make_predictions_on_testset(model, X_test,n,n_ris):
+def make_predictions_on_testset(model, X_test,n,n_ris,nmax,n_ris_max):
     # Préparer les entrées correctement pour les utilisateurs
+
+    # Générer les combinaisons possibles d'utilisateurs et de RIS
+    user_combinations = generate_lots(n, nmax, nmax)
+    ris_combinations = generate_lots(n_ris, n_ris_max, n_ris_max)
+    all_combinations = []
+    for uc in user_combinations:
+        for rc in ris_combinations:
+            all_combinations.append(uc + rc)
+
+
+
     user_inputs = prepare_user_inputs(X_test,n,n_ris)
     # Faire des prédictions
-    y_pred = model.predict(user_inputs)
+    #y_pred = model.predict(user_inputs)
 
-    return y_pred
-
-
-
-
-
+    outputs, indices = model.predict(user_inputs)
+    best_combinations = [all_combinations[i] for i in indices]
+    #print(f"Meilleure combinaison: {best_combinations}")
+    #print(f"outputs: {outputs}")
+    return outputs,best_combinations
 
 # Fonction pour charger les données depuis un fichier CSV
-def load_data(filename, n_users, n_ris):
+def load_data2(filename, n_users, n_ris,scaler, scalerRIS, scalerRuser):
     """
     Charge les données depuis un fichier CSV pour n utilisateurs et n RIS, et sépare les caractéristiques (features)
     et les cibles (targets).
@@ -397,24 +432,128 @@ def load_data(filename, n_users, n_ris):
     for i in range(1, n_ris + 1):
         RIS_bs.append(f"BS RIS{i}_real")
         RIS_bs.append(f"BS RIS{i}_imag")
+    X_bs = df[RIS_bs].values
+    X_bs = scalerRIS.transform(X_bs)
+    Xt = scalerRIS.transform(X_bs)
 
-    for i in range(1, n_users + 1):
+    csi_columns = []
+    for i in range(1, 6):
         csi_columns.append(f"CSI user{i}_real")
         csi_columns.append(f"CSI user{i}_imag")
+    X = scaler.transform(df[csi_columns].values)
+    Xt = np.hstack((Xt, scaler.transform(df[csi_columns].values)))
 
     for ris in range(1, n_ris + 1):
-        for i in range(1, n_users + 1):
-            RIS_users.append(f"RIS user{ris}_{i}_real")
-            RIS_users.append(f"RIS user{ris}_{i}_imag")
+      for i in range(1, 6):
+          RIS_users.append(f"RIS user{ris}_{i}_real")
+          RIS_users.append(f"RIS user{ris}_{i}_imag")
+    X_ris = scalerRuser.transform(df[RIS_users].values)
+    Xt = np.hstack((Xt, scalerRuser.transform(df[RIS_users].values)))
+    
+    for j in range(1,n_users//5):
+      csi_columns = []
+      for i in range((j*5)+1, (j*5)+6):
+          csi_columns.append(f"CSI user{i}_real")
+          csi_columns.append(f"CSI user{i}_imag")
+      X = np.hstack((X, scaler.transform(df[csi_columns].values)))
+      Xt = np.hstack((Xt, scaler.transform(df[csi_columns].values)))
+      RIS_users = []
+      for ris in range(1, n_ris + 1):
+          for i in range(j*5+1, j*5+6):
+              RIS_users.append(f"RIS user{ris}_{i}_real")
+              RIS_users.append(f"RIS user{ris}_{i}_imag")
+      X_ris = np.hstack((X_ris, scalerRuser.transform(df[RIS_users].values)))
+      Xt = np.hstack((Xt, scalerRuser.transform(df[RIS_users].values)))
 
     # Extraire les caractéristiques X
-    X = df[csi_columns].values
-    X_bs = df[RIS_bs].values
-    X_ris = df[RIS_users].values
+    #X = df[csi_columns].values
+    
+    #X_ris = df[RIS_users].values
     # La cible (sortie) est la somme des sum-rates
     y = df["sum-rate max"].values
 
-    return X,X_bs,X_ris, y
+    return Xt,X,X_bs,X_ris, y
+
+
+
+
+# Fonction pour charger les données depuis un fichier CSV
+def load_data(filename, n_users, n_ris,scaler, scalerRIS, scalerRuser):
+    """
+    Charge les données depuis un fichier CSV pour n utilisateurs et n RIS, et sépare les caractéristiques (features)
+    et les cibles (targets).
+    """
+    df = pd.read_csv(filename)
+
+    # Dynamique: sélection des colonnes pour BS to RIS
+    csi_columns = []
+    RIS_bs = []
+    RIS_users = []
+     # Générer les colonnes pour chaque utilisateur (chaque canal)
+    for i in range(1, n_ris + 1):
+        RIS_bs.append(f"BS RIS{i}_real")
+        RIS_bs.append(f"BS RIS{i}_imag")
+    X_bs = df[RIS_bs].values
+    Xt = scalerRIS.transform(X_bs)
+
+    csi_columns = []
+    for i in range(1, 6):
+        csi_columns.append(f"CSI user{i}_real")
+        csi_columns.append(f"CSI user{i}_imag")
+    X = df[csi_columns].values
+    csi_scaled = scaler.transform(df[csi_columns].values)
+
+    for i in range(1, 6):
+      for ris in range(1, n_ris + 1):
+          RIS_users.append(f"RIS user{ris}_{i}_real")
+          RIS_users.append(f"RIS user{ris}_{i}_imag")
+    X_ris = df[RIS_users].values
+    ris_scaled = scalerRuser.transform(df[RIS_users].values)
+
+    for i in range(5):  # 0 à 4 → utilisateurs 1 à 5
+      # Ajouter CSI (2 colonnes par utilisateur)
+      Xt = np.hstack((Xt, csi_scaled[:, i*2:(i+1)*2]))  # 2 colonnes
+
+      # Ajouter RIS pour cet utilisateur (3 RIS * 2 canaux = 6 colonnes)
+      Xt = np.hstack((Xt, ris_scaled[:, i*6:(i+1)*6]))  # 6 colonnes
+
+    
+    for j in range(1,n_users//5):
+      csi_columns = []
+      for i in range((j*5)+1, (j*5)+6):
+          csi_columns.append(f"CSI user{i}_real")
+          csi_columns.append(f"CSI user{i}_imag")
+      X = np.hstack((X, df[csi_columns].values))
+      csi_scaled = scaler.transform(df[csi_columns].values)
+      RIS_users = []
+      for i in range(j*5+1, j*5+6):
+        for ris in range(1, n_ris + 1):
+              RIS_users.append(f"RIS user{ris}_{i}_real")
+              RIS_users.append(f"RIS user{ris}_{i}_imag")
+      X_ris = np.hstack((X_ris, df[RIS_users].values))
+      ris_scaled = scalerRuser.transform(df[RIS_users].values)
+
+      for i in range(5):  # 0 à 4 → utilisateurs 1 à 5
+        # Ajouter CSI (2 colonnes par utilisateur)
+        Xt = np.hstack((Xt, csi_scaled[:, i*2:(i+1)*2]))  # 2 colonnes
+
+        # Ajouter RIS pour cet utilisateur (3 RIS * 2 canaux = 6 colonnes)
+        Xt = np.hstack((Xt, ris_scaled[:, i*6:(i+1)*6]))  # 6 colonnes
+      
+      RIS_users = []
+      for ris in range(1, n_ris + 1):
+          for i in range(1,n_users + 1):
+              RIS_users.append(f"RIS user{ris}_{i}_real")
+              RIS_users.append(f"RIS user{ris}_{i}_imag")
+      X_ris = np.hstack((X_ris, df[RIS_users].values))
+    # Extraire les caractéristiques X
+    #X = df[csi_columns].values
+    
+    #X_ris = df[RIS_users].values
+    # La cible (sortie) est la somme des sum-rates
+    y = df["sum-rate max"].values
+
+    return Xt,X,X_bs,X_ris, y
 
 def load_X_cplx(X,n,n_ris):
   X_cplx = []
@@ -445,6 +584,30 @@ def load_X_ris_cplx(X, n, n_ris):
                 print(f"Warning: Index out of bounds for user {u} and RIS {i}")
 
     return X_cplx
+# --- Fonction pour charger les données ---
+def load_data_from_csv(filename, n_users, n_ris,scaler, scalerRIS):
+    df = pd.read_csv(filename)
+
+    csi_columns = []
+    for ris in range(1, n_ris + 1):
+        csi_columns.append(f"BS RIS{ris}_real")
+        csi_columns.append(f"BS RIS{ris}_imag")
+    csi_columns = scalerRIS.transform(csi_columns)
+    X = df[csi_columns].values
+
+    for i in range(1,n_users//5):
+      csi_columns = []
+      for user in range(1, 6):
+          csi_columns.append(f"CSI user{user}_real")
+          csi_columns.append(f"CSI user{user}_imag")
+          for ris in range(1, n_ris + 1):
+              csi_columns.append(f"RIS user{ris}_{user}_real")
+              csi_columns.append(f"RIS user{ris}_{user}_imag")
+      csi_columns = scaler.transform(csi_columns)
+      X = np.hstack((X, df[csi_columns].values))
+
+    y = df[["sum-rate max"]].values
+    return X, y
 
 # Fonction pour générer tous les triplets parmi n utilisateurs
 def generate_triplets(n,l):
@@ -486,43 +649,58 @@ def generate_lots(n, k=6, l=3):
     return lots
 
 
-n = 7  # Nombre d'utilisateurs (15 utilisateurs dans ce cas)
+n = 20  # Nombre d'utilisateurs (15 utilisateurs dans ce cas)
 n_ris=3
 nmax= 5
 n_ris_max = 3
 
-test_size = 1000
+test_size = 100
 input_dim = 2*(n_ris_max+nmax*(1+n_ris_max))  # Chaque vecteur d'entrée a 6 éléments (2 éléments CSI pour chaque utilisateur dans une combinaison de 3)
 weights_path = 'model.weights.h5'  # Chemin vers les poids enregistrés du modèle pré-entraîné
+model_path = 'mon_modele_complet.h5'  # Chemin vers les poids enregistrés du modèle pré-entraîné
 power_allocation = [0.4, 0.4, 0.4]  # Allocation de puissance
 # Charger le modèle 3D avec les poids pré-entraînés
-model_3d = create_n_user_model(n,n_ris, input_dim, weights_path,nmax,n_ris_max)
-
+#model_3d = create_n_user_model(n,n_ris, input_dim, weights_path,nmax,n_ris_max)
+model_3d = create_n_user_model(n,n_ris, input_dim, model_path,nmax,n_ris_max)
 # Charger les données de test depuis le fichier CSV
-testset_file = 'train53set7-3-1000.csv'  # Remplacer par le chemin de votre fichier CSV
+testset_file = 'train53set20-100.csv'  # Remplacer par le chemin de votre fichier CSV
 
 # Charger les données
-X,X_bs,X_ris, y = load_data(testset_file,n,n_ris)
+scaler = joblib.load('scaler_x.pkl')
+scalerRIS = joblib.load('scaler_ris.pkl')
+scalerRuser = joblib.load('scaler_ruser.pkl')
+Xt,X,X_bs,X_ris, y = load_data(testset_file,n,n_ris,scaler,scalerRIS,scalerRuser)
 
-print(f"Dimensions de X: {X.shape}")
-print(f"Dimensions de y: {y.shape}")
-scaler_y = StandardScaler()
-y_test_scaled = scaler_y.fit_transform(y.reshape(-1, 1))
+#Xt, yt = load_data_from_csv(testset_file,n,n_ris)
+
+#Xt = np.hstack((X_bs, X, X_ris))
+yt = y
+print(f"Dimensions de X: {Xt.shape}")
+print(f"Dimensions de y: {yt.shape}")
+
+# Charger le scaler utilisé pendant l'entraînement
+scaler_y = joblib.load('scaler_y.pkl')
+
+
+#scaler_y = StandardScaler()
+y_test_scaled = scaler_y.transform(yt.reshape(-1, 1))
 
 # Appliquer la standardisation (moyenne = 0, écart type = 1)
-scaler = StandardScaler()
-X_test_scaled = scaler.fit_transform(X)  # Normalisation des entrées
+scaler = joblib.load('scaler_x.pkl')
+
+#scaler = StandardScaler()
+#X_test_scaled = scaler.fit_transform(Xt)  # Normalisation des entrées
 
 # Appliquer la standardisation (moyenne = 0, écart type = 1)
-scaler_bs = StandardScaler()
-X_bs_scaled = scaler_bs.fit_transform(X_bs)  # Normalisation des entrées
+#scaler_bs = StandardScaler()
+#X_bs_scaled = scaler_bs.fit_transform(X_bs)  # Normalisation des entrées
 
 # Appliquer la standardisation (moyenne = 0, écart type = 1)
-scaler_ris = StandardScaler()
-X_ris_scaled = scaler_ris.fit_transform(X_ris)  # Normalisation des entrées
-X_test_scaledX = np.concatenate((X_test_scaled, X_bs_scaled,X_ris_scaled), axis=1)
+#scaler_ris = StandardScaler()
+#X_ris_scaled = scaler_ris.fit_transform(X_ris)  # Normalisation des entrées
+#X_test_scaledX = np.concatenate((X_test_scaled, X_bs_scaled,X_ris_scaled), axis=1)
 # Faire des prédictions sur le testset
-y_pred_scaled = make_predictions_on_testset(model_3d, X_test_scaledX,n,n_ris)
+y_pred_scaled = make_predictions_on_testset(model_3d, Xt,n,n_ris,nmax,n_ris_max)
 # Extraire les sum_rates (premier élément de y_pred_scaled)
 sum_rate_scaled = y_pred_scaled[0]
 
@@ -536,7 +714,7 @@ model_3d.save_weights("model3D30.weights.h5")
 # Sauvegarder le modèle complet
 model_3d.save("modele3D30_complet.h5")
 loss = 0
-for i in range(5):  # Afficher les premières prédictions et valeurs réelles
+for i in range(15):  # Afficher les premières prédictions et valeurs réelles
   X_tst = load_X_cplx(X[i,:],n,n_ris)
   X_bs_tst = load_X_bs_cplx(X_bs[i,:],n,n_ris)
   X_ris_tst = load_X_ris_cplx(X_ris[i,:],n,n_ris)
@@ -547,5 +725,8 @@ for i in range(5):  # Afficher les premières prédictions et valeurs réelles
   loss += abs(real_value - predicted_value)/max(real_value , predicted_value)
 
   # Afficher la valeur réelle, la prédiction et la perte
-  print(f"Valeur réelle: {real_value} - Valeur prédite: {code_binaries_scaled[i]} ")
+  print(f"Valeur réelle: {real_value} - Valeur prédite: {code_binaries_scaled[i],y_pred_sum_rate[i]} ")
   print(f"Réel: {real_value} - valeur réelle du prédit {predicted_value,code_binaries_scaled[i]}")
+  print(f"NSRéel: {y_test_scaled[i]} - Ns valeur réelle du prédit {sum_rate_values_2d[i]}")
+  print("###############################################################################")
+
